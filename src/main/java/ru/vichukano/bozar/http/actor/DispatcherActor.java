@@ -1,10 +1,17 @@
 package ru.vichukano.bozar.http.actor;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import akka.actor.typed.ActorRef;
 import akka.actor.typed.Behavior;
 import akka.actor.typed.javadsl.ActorContext;
@@ -13,8 +20,11 @@ import akka.actor.typed.javadsl.Receive;
 import lombok.Value;
 
 public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMessage> {
+  private final Map<Long, String> failReasons = new TreeMap<>();
+  private final Map<Long, String> successReport = new TreeMap<>();
   private final AtomicLong succesSendCounter = new AtomicLong();
   private final AtomicLong failedSendCounter = new AtomicLong();
+  private final AtomicLong allCount = new AtomicLong();
   private final AtomicBoolean stopFlag;
   private final Map<String, ActorRef<SenderActor.SenderMessage>> senderActors = new HashMap<>();
   private final String addres;
@@ -38,6 +48,7 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
     String senderName;
     boolean success;
     Throwable error;
+    Duration duration;
   }
 
   @Value
@@ -59,16 +70,22 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
     if (answer.isSuccess()) {
       log().trace("Success answer");
       succesSendCounter.incrementAndGet();
+      long all = allCount.incrementAndGet();
+      successReport.put(all, "SUCCESS: " + all + " request duration: " + answer.duration.toMillis() + "ms");
     } else {
       log().trace("Failed answer, cause: {}", answer.getError().getMessage());
       failedSendCounter.incrementAndGet();
+      long all = allCount.incrementAndGet();
+      failReasons.put(all, "FAILED: " + all + " reason: " + answer.error.getMessage());
     }
     if (!senderActors.isEmpty()) {
       senderActors.remove(answer.getSenderName()).tell(new SenderActor.Kill());
     }
     if (senderActors.isEmpty()) {
-      log().info("Statistic: success: {}, failed: {}", succesSendCounter.get(),
-          failedSendCounter.get());
+      log().info("Statistic: success: {}, failed: {}", succesSendCounter.get(), failedSendCounter.get());
+      successReport.putAll(failReasons);
+      String report = String.join("\n", new ArrayList<>(this.successReport.values()));
+      log().info("\n{}", report);
       this.stopFlag.set(true);
       return Behaviors.stopped();
     }
