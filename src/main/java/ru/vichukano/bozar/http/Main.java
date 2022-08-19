@@ -20,13 +20,12 @@ public class Main {
     final Duration conTimeout = Duration.ofSeconds(Long.parseLong(args[2]));
     final Duration respTimeout = Duration.ofSeconds(Long.parseLong(args[3]));
     final String fileContent = args[4];
-    log.info("Paht: {}, clients: {}, connectionTimeout: {}, responseTimeout: {}, fileContent: {}",
+    log.info("Path: {}, clients: {}, connectionTimeout: {}, responseTimeout: {}, fileContent: {}",
         path, clients, conTimeout, respTimeout, fileContent);
     final var flag = new AtomicBoolean(false);
     final ActorSystem<DispatcherActor.DispatcherMessage> dispatcher =
         ActorSystem.create(DispatcherActor.create(path, flag), "sender-dispatcher");
-    dispatcher
-        .tell(new DispatcherActor.StartDispatcher(clients, fileContent, conTimeout, respTimeout));
+    dispatcher.tell(new DispatcherActor.StartDispatcher(clients, fileContent, conTimeout, respTimeout));
     while (!flag.get()) {
     }
     log.info("**************************Finish**************************");
