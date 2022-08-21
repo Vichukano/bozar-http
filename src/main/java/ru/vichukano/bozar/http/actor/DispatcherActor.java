@@ -53,7 +53,7 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
 
   @Value
   public static class StartDispatcher implements DispatcherMessage {
-    long clients;
+    int clients;
     String message;
     Duration connectionTimeout;
     Duration responseTimeout;
