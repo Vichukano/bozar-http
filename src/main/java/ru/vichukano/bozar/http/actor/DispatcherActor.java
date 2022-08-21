@@ -6,13 +6,10 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.TreeMap;
-import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import akka.actor.typed.ActorRef;
 import akka.actor.typed.Behavior;
 import akka.actor.typed.javadsl.ActorContext;
@@ -23,6 +20,7 @@ import lombok.Value;
 public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMessage> {
   private final Map<Long, String> failReasons = new TreeMap<>();
   private final Map<Long, String> successReport = new TreeMap<>();
+  private final List<Long> successTimeouts = new LinkedList<>();
   private final AtomicLong succesSendCounter = new AtomicLong();
   private final AtomicLong failedSendCounter = new AtomicLong();
   private final AtomicLong allCount = new AtomicLong();
@@ -75,7 +73,9 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
       log().trace("Success answer");
       succesSendCounter.incrementAndGet();
       long all = allCount.incrementAndGet();
-      successReport.put(all, "SUCCESS: " + all + " request duration: " + answer.duration.toMillis() + "ms");
+      long durationMs = answer.duration.toMillis();
+      successReport.put(all, "SUCCESS: " + all + " request duration: " + durationMs + "ms");
+      successTimeouts.add(durationMs);
     } else {
       log().trace("Failed answer, cause: {}", answer.getError().getMessage());
       failedSendCounter.incrementAndGet();
@@ -86,7 +86,9 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
       log().info("Statistic: success: {}, failed: {}", succesSendCounter.get(), failedSendCounter.get());
       successReport.putAll(failReasons);
       String report = String.join("\n", new ArrayList<>(this.successReport.values()));
+      OptionalDouble average = this.successTimeouts.stream().mapToLong(Long::longValue).average();
       log().info("\n{}", report);
+      log().info("Average response time: {} ms", average);
       this.stopFlag.set(true);
       senderActors.forEach((k, v) -> v.tell(new SenderActor.Kill()));
       return Behaviors.stopped();
