@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -26,18 +27,20 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
   private final AtomicLong failedSendCounter = new AtomicLong();
   private final AtomicLong allCount = new AtomicLong();
   private final AtomicBoolean stopFlag;
+  private final AtomicLong requests;
   private final Map<String, ActorRef<SenderActor.SenderMessage>> senderActors = new HashMap<>();
   private final String addres;
 
   private DispatcherActor(ActorContext<DispatcherMessage> context, String addres,
-      AtomicBoolean stopFlag) {
+      AtomicBoolean stopFlag, AtomicLong requests) {
     super(context);
     this.addres = addres;
     this.stopFlag = stopFlag;
+    this.requests = requests;
   }
 
-  public static Behavior<DispatcherMessage> create(String addres, AtomicBoolean stopFlag) {
-    return Behaviors.setup(ctx -> new DispatcherActor(ctx, addres, stopFlag));
+  public static Behavior<DispatcherMessage> create(String addres, AtomicBoolean stopFlag, AtomicLong requests) {
+    return Behaviors.setup(ctx -> new DispatcherActor(ctx, addres, stopFlag, requests));
   }
 
   public interface DispatcherMessage {
@@ -67,6 +70,7 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
 
   private Behavior<DispatcherMessage> onSenderAnswer(SenderAnswer answer) {
     log().trace("Receive answer: {}", answer);
+    requests.decrementAndGet();
     if (answer.isSuccess()) {
       log().trace("Success answer");
       succesSendCounter.incrementAndGet();
@@ -78,15 +82,13 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
       long all = allCount.incrementAndGet();
       failReasons.put(all, "FAILED: " + all + " reason: " + answer.error.getMessage());
     }
-    if (!senderActors.isEmpty()) {
-      senderActors.remove(answer.getSenderName()).tell(new SenderActor.Kill());
-    }
-    if (senderActors.isEmpty()) {
+    if (requests.get() == 0L) {
       log().info("Statistic: success: {}, failed: {}", succesSendCounter.get(), failedSendCounter.get());
       successReport.putAll(failReasons);
       String report = String.join("\n", new ArrayList<>(this.successReport.values()));
       log().info("\n{}", report);
       this.stopFlag.set(true);
+      senderActors.forEach((k, v) -> v.tell(new SenderActor.Kill()));
       return Behaviors.stopped();
     }
     return this;
@@ -100,10 +102,10 @@ public class DispatcherActor extends AbstractActor<DispatcherActor.DispatcherMes
       this.senderActors.put(name, ref);
       log().debug("Spawn new actor with name: {}", name);
     }
-    final var ti =
-        new SenderActor.Send.TimeoutInfo(start.getConnectionTimeout(), start.getResponseTimeout());
-    senderActors.forEach((k, v) -> v
-        .tell(new SenderActor.Send(addres, start.getMessage(), ti, getContext().getSelf())));
+    final var ti = new SenderActor.Send.TimeoutInfo(start.connectionTimeout, start.responseTimeout);
+    for (long i = 0; i < requests.get(); i++) {
+      senderActors.forEach((k, v) -> v.tell(new SenderActor.Send(addres, start.getMessage(), ti, getContext().getSelf())));
+    }
     log().debug("Send {} messages to actors: {}", start.getClients(), senderActors);
     return this;
   }

@@ -40,10 +40,11 @@ class MainTest {
     stubFor(post(urlEqualTo("/test")).willReturn(aResponse().withBody("World")));
     final String urlArg = "http://localhost:8082/test";
     final String clientsArgs = "100";
+    final String timesArgs = "100";
     final String connTimeoutSec = "3";
     final String respTimeoutSec = "4";
     final String messageArg = "Hello";
-    final String[] args = {urlArg, clientsArgs, connTimeoutSec , respTimeoutSec, messageArg};
+    final String[] args = {urlArg, clientsArgs, timesArgs, connTimeoutSec , respTimeoutSec, messageArg};
 
     Main.main(args);
   }
